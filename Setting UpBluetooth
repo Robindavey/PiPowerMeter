@@ -1,0 +1,156 @@
+Spoof Cycling Power Meter Using Raspberry Pi Pico W
+Overview
+This project creates a spoofed cycling power meter using a Raspberry Pi Pico W, which advertises itself as a Bluetooth Low Energy (BLE) device compatible with cycling head units or apps like Zwift or Wahoo Elemnt Bolt V2. The device broadcasts simulated power (watts) and cadence (rpm) data via the Cycling Power Service (CPS, UUID 0x1818), mimicking a real power meter like the Quarq DZero.
+The system uses MicroPython's bluetooth module to handle BLE advertising, service registration, connections, and notifications. It's designed to be simple and CPS-only (no FTMS or other services in the latest version) to emulate a standard power meter. The code disables WiFi to avoid interference with BLE, as both use the same radio on the Pico W.
+Key Features
+
+Advertises as a Cycling Power Sensor (appearance 1156).
+Registers CPS with Power Measurement (0x2A63) for notifications of power and cadence.
+Simulates power (90-110 W) and cadence (~80 rpm) with incremental crank revolutions and event times.
+Handles connections and notifications at ~1 Hz.
+Includes debugging logs for connections, subscriptions, and notification errors.
+
+Hardware Requirements
+
+Raspberry Pi Pico W (with MicroPython firmware, preferably v1.21 or later).
+USB power source or battery for the Pico W.
+
+Software Setup
+
+Install MicroPython on the Pico W (download from micropython.org).
+Copy the code to main.py on the Pico W using Thonny or rshell.
+Run the code – it will advertise as "PowerMeter" (changeable in __init__).
+
+How It Works
+The code initializes BLE, registers the CPS service, writes feature and location values, and starts advertising. When a client (e.g., LightBlue or Zwift) connects, it sends notifications with simulated data.
+BLE Service Structure
+
+Cycling Power Service (0x1818):
+
+Power Measurement (0x2A63, READ | NOTIFY): Notifications of power and cadence.
+CPS Feature (0x2A65, READ): Bitmask indicating supported features (e.g., crank revolutions for cadence).
+Sensor Location (0x2A5D, READ): Set to 13 (Left Crank).
+
+
+No other services (Battery and DIS removed in this version to simplify and fix discovery issues).
+
+Advertising Packet
+
+Flags: LE General Discoverable.
+UUIDs: CPS (0x1818) only.
+Service Data: Minimal CPS data with example power (100 W) to aid discovery.
+Appearance: 1156 (Cycling Power Sensor).
+Name: "PowerMeter".
+
+Notification Payload
+The Power Measurement (0x2A63) payload is packed as little-endian (<BHhHH):
+
+Sequence number (B): Incremental counter (0-255, wraps).
+Flags (H): 0x0020 (crank revolution data present).
+Power (h): Signed short (90-110 W).
+Crank revolutions (H): Cumulative unsigned short (increments by 1 per second).
+Last crank event time (H): Unsigned short in 1/1024 s (increments by 1024 per second).
+
+The client (e.g., Zwift) calculates cadence as 60 * (delta revolutions / delta time in seconds).
+Connection and Notification Flow
+
+On connection (IRQ event 1): Add handle to connections set.
+On disconnection (IRQ event 2): Restart advertising.
+Subscription (IRQ event 20): Log if 0x2A63 is subscribed.
+Notifications: Sent every 1s to connected clients.
+
+Troubleshooting the High Watts (20,000 W)
+The reported 20,000 W is likely due to a payload parsing error on the client side (e.g., Zwift or Wahoo). Here's why and how to fix:
+Cause
+
+The current payload includes an extra byte for the sequence number (B), which is not part of the standard CPS spec.
+The spec for power + crank data is <HhHH (flags H, power h, revs H, time H).
+With the extra B, the client parses the sequence number as part of the flags, shifting fields:
+
+Flags become seq + flags (e.g., 1 + 0x0020 = 33), which is invalid.
+Power becomes the actual flags value (0x0020 = 32), but shifted fields cause power to be interpreted as a large number (e.g., crank revs or time misread as power, leading to 20,000 W).
+
+
+This misalignment makes the client (Zwift) misinterpret the power field, resulting in unrealistically high values.
+
+Fix
+
+Remove the sequence number from the payload to match the spec.
+Update the code in send_spoofed_power to:
+textcps_payload = struct.pack(
+    "<HhHH",
+    flags,
+    instantaneous_power,
+    self._crank_revolutions,
+    self._last_crank_event_time
+)
+
+Flags: 0x0020 (crank data present).
+Retest in LightBlue to confirm the payload (e.g., [20 00 64 00 01 00 00 04] = flags 0x0020, power 100 W, revs 1, time 1024).
+Retest in Zwift – power should now be 90-110 W, cadence ~80 rpm.
+
+Other Potential Causes
+
+Signed vs Unsigned: Power is signed short (h), but if the client expects unsigned, negative values could appear large.
+
+Fix: Ensure power is positive (already is).
+
+
+Byte Order: Confirmed little-endian (<), standard for BLE.
+Crank Data Validation: If delta time or revs are invalid, client may discard or miscalculate.
+
+Fix: Ensure incremental updates (already in code).
+
+
+If still high: Use power-only (flags=0x0000, <Hh, flags, power) and update CPS Feature to 0x00000000.
+
+Known Issues and Fixes
+
+No Services in LightBlue: Caused by registration failure or stack bug. Simplified to CPS-only; check serial for "CPS service registered."
+
+If persists, update MicroPython firmware or test on another Pico W.
+
+
+No Subscription Acknowledgment: IRQ handler now logs status (1=subscribed). If no log, client isn't subscribing.
+
+Fix: Ensure FLAG_NOTIFY is set.
+
+
+Zwift 0 W: Client not subscribing or rejecting payload.
+
+Fix: Remove seq, test power-only.
+
+
+Unhandled IRQ Events:
+
+Event 21: MTU exchange – normal, logged.
+Event 4: Read request – now handled (return 0 to allow).
+
+
+Battery Packed with Power: Handle overlap; removed Battery to isolate CPS.
+
+Add back once CPS works: Uncomment Battery lines.
+
+
+
+Deployment Notes
+
+Power the Pico W and run the code.
+Keep Pico W close to client (<3 ft) to avoid signal loss.
+Monitor serial via Thonny for logs.
+For Wahoo: If revisiting, add Battery and DIS, as some head units expect them.
+
+Future Improvements
+
+Add realistic data variation (e.g., power based on cadence).
+Implement FTMS for Trainer mode if needed.
+Handle client writes for control (e.g., CPS Control Point, 0x2A64).
+Use external sensor for real data instead of spoofing.
+
+References
+
+BLE Cycling Power Service Spec: bluetooth.com/specifications/cycling-power
+MicroPython Bluetooth Docs: docs.micropython.org/en/latest/library/bluetooth.html
+Zwift BLE Support: Search forums for "BLE power meter pairing issues."
+
+If the watts issue persists after removing the sequence number, share updated serial logs, LightBlue screenshots, and Zwift logs for further debugging.

@@ -63,7 +63,7 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.bind((HOST, PORT))
 s.listen(1)
 print(f"TCP Server listening on {HOST}:{PORT}")
-
+SpeedUp = 4
 while True:
     conn, addr = s.accept()
     print("Client connected:", addr)
