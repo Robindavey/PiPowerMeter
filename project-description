@@ -1,0 +1,152 @@
+🚴‍♂️ Project Plan: Pi Pico W Cycling Power Broadcaster
+🎯 Goal
+
+Create a Pi Pico W-based cycling power broadcaster that:
+
+Uses a GPS module to get position, speed, and elevation in real time.
+
+Calculates estimated cycling power using physics.
+
+Broadcasts the power value via Bluetooth or Wi-Fi (depending on sensor support) to compatible cycling head units (e.g., Wahoo).
+
+🧩 Key Components
+1. GPS Module Interface
+
+Connect a GPS module to Pi Pico W via UART/I2C/SPI.
+
+Use a MicroPython or CircuitPython library to read NMEA sentences.
+
+Extract:
+
+Latitude / Longitude
+
+Altitude
+
+Timestamp
+
+Speed (if available, otherwise compute from position delta)
+
+Store a small buffer of recent points to compute speed, distance, and slope.
+
+2. Power Calculation Logic
+
+Implement a Python version of calculate_power().
+
+Inputs:
+
+Rider + bike weight
+
+Rolling resistance (Crr)
+
+Air density (ρ)
+
+Drag area (CdA)
+
+Gravity (g)
+
+Formulas:
+
+P_gravity = weight * g * v * slope
+P_roll    = weight * g * Crr * v
+P_aero    = 0.5 * rho * CdA * v**3
+P_total   = P_gravity + P_roll + P_aero
+
+
+Smooth results using a moving average over a few samples (3–7).
+
+Speed and slope calculations:
+
+v = distance / time
+
+slope = elevation gain / horizontal distance
+
+3. Bluetooth/Wi-Fi Broadcasting
+
+Depending on the chosen protocol:
+
+Option A: Bluetooth LE (preferred for Wahoo pairing)
+
+Use a BLE stack for Raspberry Pi Pico W (e.g., Adafruit BLE
+).
+
+Advertise Cycling Power Service (UUID: 0x1818).
+
+Update Power Measurement characteristic (0x2A63) every second.
+
+Appear to Wahoo as a virtual power meter (name: PiPower).
+
+Option B: Wi-Fi + WebSocket / HTTP
+
+Broadcast power via Wi-Fi to a smartphone/tablet that can forward it to head units.
+
+Less direct than BLE, but easier to debug and extend.
+
+4. Optional Local Display
+
+Add an OLED / TFT screen connected to the Pico W.
+
+Show:
+
+Current power output (watts)
+
+Speed (km/h or mph)
+
+Slope (%)
+
+GPS fix quality
+
+5. Testing and Deployment
+
+Flash MicroPython / CircuitPython onto Pi Pico W.
+
+Connect GPS module and optionally a display.
+
+Run the script and verify:
+
+GPS coordinates are updating correctly
+
+Power calculations are reasonable
+
+BLE advertising appears on Wahoo / other cycling computers
+
+Test in a stationary and moving environment to validate readings.
+
+🧱 Suggested File Structure (MicroPython)
+cycling_power/
+│
+├── main.py             # Main loop: read GPS, calculate power, broadcast
+├── gps_reader.py       # GPS parsing & speed/slope calculations
+├── power_calculator.py # Physics formulas
+├── ble_broadcaster.py  # BLE peripheral / advertising
+├── display.py          # Optional OLED/TFT output
+└── config.py           # Constants: weight, Crr, CdA, etc.
+
+🧠 Optional Improvements
+
+Log ride data to a CSV or JSON file on SPIFFS / SD card.
+
+Add heart rate or cadence input (via ANT+ or BLE).
+
+Implement speed smoothing or GPS correction.
+
+Allow dynamic configuration of rider parameters over BLE or Wi-Fi.
+
+Implement a web dashboard via Pico W’s Wi-Fi.
+
+⚙️ Core Technologies
+Component	Library/Framework	Purpose
+GPS	Micropython gps / pygps	Read position, speed, elevation
+Power Calc	Python / MicroPython math	Calculate total cycling power
+BLE	Adafruit BLE or rp2 BLE	Broadcast power as virtual sensor
+Display	SSD1306/ILI9341 Python driver	Optional onboard UI
+Microcontroller	Raspberry Pi Pico W	Main processing unit
+Deployment	Thonny / uPyCraft	Flash and run MicroPython
+✅ Summary Checklist
+Step	Task	Status
+1	Flash MicroPython on Pi Pico W	☐
+2	Connect GPS module & test reading coordinates	☐
+3	Implement power calculation logic	☐
+4	Set up BLE peripheral broadcasting	☐
+5	Optional: connect OLED / TFT display	☐
+6	Test moving ride data	☐
+7	Pair Pi Pico with Wahoo and validate power broadcast	☐
