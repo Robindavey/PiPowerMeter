@@ -11,7 +11,10 @@ SERVER_PORT = 9000
 # --- Initialize BLE ---
 ble = bluetooth.BLE()
 cps = BLECyclingPower(ble, name="PowerMeter")
-
+def cleanup():
+    print("Cleaning up Bluetooth...")
+    ble.active(False)
+    print("Bluetooth turned off.")
 # --- Listener function ---
 def listen(weight=75):
     last_point = None
@@ -53,8 +56,7 @@ def listen(weight=75):
         # --- Broadcast power over BLE at 1 Hz ---
         now = time.time()
         if now - last_send_time >= 1:
-            cps.send_spoofed_power(last_power)
+            cps.send_spoofed_power(int(last_power))
             last_send_time = now
 
         time.sleep(0.01)  # small delay to reduce CPU load
-

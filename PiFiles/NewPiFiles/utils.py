@@ -30,3 +30,13 @@ def calculate_power(weight, p1, p2):
     P_aero = 0.5 * rho * CdA * v**3
 
     return max(0, P_gravity + P_roll + P_aero)
+
+def nmea_to_decimal(coord, direction):
+    if not coord:
+        return None
+    deg = int(float(coord)/100)
+    minutes = float(coord) - deg*100
+    dec = deg + minutes/60
+    if direction in ['S','W']:
+        dec *= -1
+    return round(dec, 6)

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FTP Slider</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .slider-container {
+            width: 80%;
+            margin: 40px auto;
+        }
+
+        input[type=range] {
+            width: 100%;
+            height: 18px;
+            appearance: none;
+            border-radius: 10px;
+            background: linear-gradient(to right,
+                #bfbfbf 0 150px,      
+                #4caf50 150px 205px,   
+                #ffeb3b 205px 246px,   
+                #ff9800 246px 286px,   
+                #f44336 286px 328px,   
+                #9c27b0 328px 850px    
+            );
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: black;
+            cursor: pointer;
+        }
+
+        .ticks {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-top: 5px;
+            color: #333;
+        }
+
+        .zone-buttons {
+            margin-top: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .zone-buttons button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: white;
+        }
+
+        .z1 { background: #bfbfbf; color: black; }
+        .z2 { background: #4caf50; }
+        .z3 { background: #ffeb3b; color: black; }
+        .z4 { background: #ff9800; }
+        .z5 { background: #f44336; }
+        .z6 { background: #9c27b0; }
+
+    </style>
+</head>
+
+<body>
+    <h2>FTP Training Zones Slider</h2>
+    <p>FTP = <strong>273W</strong></p>
+    <p>Value: <span id="val">{{ value }}</span> W</p>
+
+    <div class="slider-container">
+        <input type="range" id="mySlider" min="150" max="1250" value="{{ value }}" step="1">
+
+        <div class="ticks">
+            <span>150</span>
+            <span>200</span>
+            <span>250</span>
+            <span>300</span>
+            <span>350</span>
+            <span>400</span>
+            <span>450</span>
+            <span>500</span>
+            <span>550</span>
+            <span>600</span>
+            <span>650</span>
+            <span>700</span>
+            <span>750</span>
+            <span>800</span>
+            <span>850</span>
+        </div>
+
+        <!-- Zone Buttons -->
+        <div class="zone-buttons">
+            <button class="z1" onclick="jumpToZone(1)">Zone 1</button>
+            <button class="z2" onclick="jumpToZone(2)">Zone 2</button>
+            <button class="z3" onclick="jumpToZone(3)">Zone 3</button>
+            <button class="z4" onclick="jumpToZone(4)">Zone 4</button>
+            <button class="z5" onclick="jumpToZone(5)">Zone 5</button>
+            <button class="z6" onclick="jumpToZone(6)">Zone 6+</button>
+            <button class="z3" onclick="jumpToZone(7)">3w/kg</button>
+            <button class="z4" onclick="jumpToZone(8)">4w/kg</button>
+            <button class="z5" onclick="jumpToZone(9)">5w/kg</button>
+            <button class="z5" onclick="jumpToZone(10)">6w/kg</button>
+            <button class="z5" onclick="jumpToZone(11)">SPRINT</button>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById("mySlider");
+        const label = document.getElementById("val");
+
+        function sendValueToServer(value) {
+            fetch(`/getData?value=${value}`)
+                .then(res => res.json())
+                .then(data => console.log("Server responded:", data));
+        }
+
+        // Update label on drag
+        slider.addEventListener("input", () => {
+            label.textContent = slider.value;
+        });
+
+        // Send on release
+        slider.addEventListener("change", () => {
+            sendValueToServer(slider.value);
+        });
+
+        // --- Zone Jump Function ---
+        function jumpToZone(zone) {
+            let target;
+
+            // FTP = 273
+            // Zones defined using absolute watt boundaries:
+            if (zone === 1) target = 125;      // midpoint <150 (but slider min = 150)
+            if (zone === 2) target = 200;
+            if (zone === 3) target = 270;
+            if (zone === 4) target = 310;
+            if (zone === 5) target = 360 ;
+            if (zone === 6) target = 750;
+            if (zone === 7) target = 3*65;
+            if (zone === 8) target = 4*65;
+            if (zone === 9) target = 5*65;
+            if (zone === 10) target = 6*65;
+            if (zone === 11) target = 1250;      // just above Z5
+
+            // Clamp to slider limits
+            target = Math.max(150, Math.min(1250, Math.round(target)));
+
+            slider.value = target;
+            label.textContent = target;
+            sendValueToServer(target);
+        }
+    </script>
+</body>
+</html>

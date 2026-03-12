@@ -18,13 +18,14 @@ _CPS_FEATURE = (bluetooth.UUID(0x2A65), bluetooth.FLAG_READ,)
 _SENSOR_LOCATION = (bluetooth.UUID(0x2A5D), bluetooth.FLAG_READ,)
 _CPS_SERVICE = (_CPS_UUID, (_POWER_MEASUREMENT, _CPS_FEATURE, _SENSOR_LOCATION),)
 
+
 class BLECyclingPower:
     def __init__(self, ble, name="PowerMeter"):
         self._ble = ble
         self._ble.active(True)
         self._ble.irq(self._irq)
 
-        # --- Register CPS Service only ---
+        # Register CPS Service
         try:
             cps_services = self._ble.gatts_register_services((_CPS_SERVICE,))
             self._cps_handles = cps_services[0]  # (Measurement, Feature, Location)
@@ -45,6 +46,7 @@ class BLECyclingPower:
         self._last_crank_event_time = 0  # 1/1024 s
         self._advertise(name)
 
+    # --- BLE IRQ handler ---
     def _irq(self, event, data):
         if event == 1:  # Connected
             conn_handle, _, _ = data
@@ -52,7 +54,7 @@ class BLECyclingPower:
             print("Connected to:", conn_handle)
         elif event == 2:  # Disconnected
             conn_handle, _, _ = data
-            self._connections.remove(conn_handle)
+            self._connections.discard(conn_handle)
             self._advertise()
             print("Disconnected from:", conn_handle)
         elif event == 3:  # GATT write
@@ -61,8 +63,7 @@ class BLECyclingPower:
         elif event == 4:  # GATT read request
             conn_handle, value_handle = data
             print(f"Read request for {value_handle} from {conn_handle}")
-            return 0  # Allow the read
-        elif event == 20:  # GATTS indicate done (possible subscription acknowledgment)
+        elif event == 20:  # GATTS indicate done
             conn_handle, value_handle, status = data
             char = "Unknown"
             if value_handle == self._cps_handles[0]:
@@ -73,16 +74,14 @@ class BLECyclingPower:
             print(f"MTU exchanged for {conn_handle}: mtu={mtu}")
         else:
             print(f"Unhandled IRQ event: {event}, data: {data}")
-        return None
 
+    # --- Advertising ---
     def _advertise(self, name="PowerMeter"):
-        # Advertising: Flags + CPS UUID + Service Data + Appearance + Name
         adv = bytearray([0x02, 0x01, 0x06])           # Flags: LE General Discoverable
-        adv += bytearray([0x03, 0x03, 0x18, 0x18])    # CPS UUID only
-        adv += bytearray([0x07, 0x16, 0x18, 0x18, 0x00, 0x00, 0x64, 0x00])  # CPS Service Data (power 100 W)
-        adv += bytearray([0x03, 0x19, 0x84, 0x04])   # Appearance: Cycling Power Sensor (1156)
-        adv += bytearray([len(name)+1, 0x09]) + name.encode()
-        # Scan response: Complete local name
+        adv += bytearray([0x03, 0x03, 0x18, 0x18])    # CPS UUID
+        adv += bytearray([0x07, 0x16, 0x18, 0x18, 0x00, 0x00, 0x64, 0x00])  # CPS Service Data
+        adv += bytearray([0x03, 0x19, 0x84, 0x04])    # Appearance: Cycling Power Sensor
+        adv += bytearray([len(name)+1, 0x09]) + name.encode()  # Name
         scan_resp = bytearray([len(name)+1, 0x08]) + name.encode()
         try:
             self._ble.gap_advertise(100_000, adv, resp_data=scan_resp)
@@ -90,40 +89,38 @@ class BLECyclingPower:
         except Exception as e:
             print("Advertising failed:", e)
 
-    def send_spoofed_power(self, instantaneous_power):
-        # Increment sequence number
+    # --- Send spoofed power ---
+    def send_power(self, instantaneous_power):
         self._sequence_number = (self._sequence_number + 1) % 256
-
-        # --- Spoofed values ---
-        self._crank_revolutions = (self._crank_revolutions + 1) % 65536  # ~80 rpm @ 1s
+        self._crank_revolutions = (self._crank_revolutions + 1) % 65536
         delta_time = int(1.0 * 1024)  # 1s in 1/1024 s
         self._last_crank_event_time = (self._last_crank_event_time + delta_time) % 65536
 
-        # CPS payload: seq (B) + flags (H, crank data) + power (h) + revs (H) + time (H)
         flags = 0x0020
         cps_payload = struct.pack(
-        "<HhHH",
-        flags,
-        instantaneous_power,
-        self._crank_revolutions,
-        self._last_crank_event_time
-    )
+            "<HhHH",
+            flags,
+            instantaneous_power,
+            self._crank_revolutions,
+            self._last_crank_event_time
+        )
 
-        # Send notifications
         if self._connections:
             for conn_handle in self._connections:
                 try:
                     self._ble.gatts_notify(conn_handle, self._cps_handles[0], cps_payload)
                     print(
                         f"Sent to {conn_handle}: Seq: {self._sequence_number} | "
-                        f"Power: {instantaneous_power} W | Cadence: ~80 rpm (CPS)"
+                        f"Power: {instantaneous_power} W | Cadence: ~80 rpm"
                     )
-                    time.sleep_ms(10)  # Avoid buffer issues
+                    time.sleep_ms(10)
                 except OSError as e:
                     print(f"Failed to notify {conn_handle}: {e}")
         else:
             print("No connections, skipping notify")
-    def cleanup():
+
+    # --- Cleanup BLE ---
+    def cleanup(self):
         print("Cleaning up Bluetooth...")
-        ble.active(False)
+        self._ble.active(False)
         print("Bluetooth turned off.")
