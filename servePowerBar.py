@@ -12,6 +12,7 @@ def index():
 @app.route("/getData")
 def get_data():
     global CURRENT_VALUE
+    
     value = request.args.get("value", type=int)
 
     # If no value was passed, return the last known slider value
